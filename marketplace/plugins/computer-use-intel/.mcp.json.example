@@ -1,0 +1,12 @@
+{
+  "_comment": "Template. install.sh generates the real .mcp.json next to this file with machine-specific absolute paths. You normally do not edit this by hand.",
+  "mcpServers": {
+    "computer-use-intel": {
+      "command": "__NODE_BIN__",
+      "args": ["__SERVER_JS__"],
+      "env": {
+        "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+      }
+    }
+  }
+}

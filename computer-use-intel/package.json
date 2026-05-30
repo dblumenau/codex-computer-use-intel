@@ -1,0 +1,29 @@
+{
+  "name": "computer-use-intel",
+  "version": "1.2.0",
+  "description": "MCP server mimicking OpenAI Codex 'Computer Use' on Intel Macs (x86_64)",
+  "main": "dist/server.js",
+  "bin": {
+    "computer-use-intel-mcp": "dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc && npm run build:ocr && npm run build:ax && npm run build:cg",
+    "build:ocr": "xcrun swiftc -O -o dist/vision-ocr src/vision-ocr.swift -framework Vision -framework AppKit || (echo '[build:ocr] swiftc failed - falling back to PyObjC OCR' && npm run build:ocr:py)",
+    "build:ax": "xcrun swiftc -O -o dist/ax-helper src/ax-helper.swift -framework AppKit -framework ApplicationServices || echo '[build:ax] swiftc failed - Accessibility tools (get_ui_elements, click_element, menus, windows) will be unavailable'",
+    "build:cg": "xcrun swiftc -O -o dist/cgevent src/cgevent.swift -framework CoreGraphics -framework AppKit || echo '[build:cg] swiftc failed - precise scroll + arbitrary key hold/tap (key_tap) will be unavailable'",
+    "build:ocr:py": "sh scripts/setup-ocr.sh",
+    "start": "node dist/server.js",
+    "dev": "tsc && node dist/server.js"
+  },
+  "keywords": ["mcp", "computer-use", "macos", "intel", "codex"],
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^6.0.3"
+  }
+}

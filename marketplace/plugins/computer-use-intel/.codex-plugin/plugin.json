@@ -1,0 +1,42 @@
+{
+  "name": "computer-use-intel",
+  "version": "1.2.0",
+  "description": "Computer Use for Intel (x86_64) Macs.\n\nAliases: @computer-use-intel, @computer-use, computer use, Computernutzung.\n\nDrop-in replacement for the arm64-only bundled Computer Use plugin. Lets Codex control this Mac (mouse, keyboard, scrolling, screenshots, OCR / find-text-on-screen, Accessibility UI tree, menus, windows, clipboard) using cliclick, screencapture, osascript and native x86_64 Swift helpers (Vision OCR, Accessibility, CGEvent).\n\nUse this plugin when the user asks to look at the screen, click, type, scroll, read on-screen text, or otherwise control local macOS apps on this Intel machine. Prefer the Accessibility tools (get_ui_elements / find_element / click_element / click_menu_item) over pixel/OCR clicking when possible.",
+  "author": {
+    "name": "karateka"
+  },
+  "license": "MIT",
+  "keywords": [
+    "computer-use",
+    "computer use",
+    "macos",
+    "intel",
+    "x86_64",
+    "automation",
+    "screenshot",
+    "ocr",
+    "accessibility",
+    "cliclick"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Computer Use (Intel)",
+    "shortDescription": "Control this Intel Mac: mouse, keyboard, screen, OCR, Accessibility",
+    "longDescription": "An x86_64 drop-in replacement for the arm64-only bundled Computer Use plugin. Exposes 52 tools to control the local Mac: screenshots (incl. Set-of-Marks annotated), mouse/keyboard with modifier holds and CGEvent scrolling, on-device Vision OCR (find text on screen), the macOS Accessibility UI tree (read elements, click buttons/menu items, set field values), window management, clipboard and pixel sampling. Built for Intel Macs where the official Computer Use helpers (arm64-only) cannot run.",
+    "developerName": "karateka",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Take a screenshot and describe what you see.",
+      "Read the on-screen text and tell me what app is in front.",
+      "Find the Save button and click it."
+    ],
+    "brandColor": "#339CFF",
+    "screenshots": []
+  }
+}

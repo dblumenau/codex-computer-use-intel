@@ -1,0 +1,20 @@
+{
+  "name": "codexintel-local",
+  "interface": {
+    "displayName": "Codexintel (Local)"
+  },
+  "plugins": [
+    {
+      "name": "computer-use-intel",
+      "source": {
+        "source": "local",
+        "path": "./plugins/computer-use-intel"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

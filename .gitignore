@@ -1,0 +1,12 @@
+# Build output
+computer-use-intel/dist/
+computer-use-intel/node_modules/
+computer-use-intel/.venv/
+
+# Generated, machine-specific MCP config (created by install.sh)
+marketplace/plugins/computer-use-intel/.mcp.json
+
+# macOS / editor cruft
+.DS_Store
+*.log
+*.bak.*
