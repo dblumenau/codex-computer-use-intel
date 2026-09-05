@@ -18,6 +18,7 @@
 //   ax-helper window      --action focus|move|resize|minimize|unminimize
 //                         [--app NAME] [--title T] [--index I] [--x N --y N] [--width N --height N]
 //   ax-helper selected-text
+//   ax-helper app-info [--app NAME|BUNDLE_ID] | focus-app --app NAME|BUNDLE_ID
 //
 // Matchers (any combination): --role ROLE --title T --value V --index I
 //   --title/--value/--role match case-insensitive substring; --index picks the
@@ -150,6 +151,29 @@ func resolvePid() -> pid_t? {
         return nil
     }
     return NSWorkspace.shared.frontmostApplication?.processIdentifier
+}
+
+// NSWorkspace-based identity/focus does not need an AX tree and resolves bundle IDs exactly.
+if mode == "app-info" || mode == "focus-app" {
+    guard let pid = resolvePid(), let app = NSRunningApplication(processIdentifier: pid) else {
+        emitError("running app not found")
+    }
+    if mode == "focus-app" {
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
+            // The return value can be false for an already active application;
+            // the observed foreground PID below is the authoritative result.
+            app.activate(options: [.activateAllWindows])
+        }
+        let deadline = Date().addingTimeInterval(2)
+        while NSWorkspace.shared.frontmostApplication?.processIdentifier != pid && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else {
+            emitError("app did not become frontmost within 2 seconds")
+        }
+    }
+    emit(["ok": true, "pid": Int(pid), "name": app.localizedName ?? "",
+          "bundleId": app.bundleIdentifier ?? ""])
 }
 
 // MARK: - Tree walk

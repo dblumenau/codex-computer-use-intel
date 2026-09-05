@@ -1,9 +1,9 @@
 # computer-use-intel
 
-Drop-in **x86_64** MCP server that replaces the arm64-only `Codex Computer Use.app`
-helper shipped with Codex Desktop on macOS. Lets Codex control mouse, keyboard,
-screenshots, scrolling and app launches on Intel Macs where the bundled plugin
-fails with `bad CPU type in executable`.
+Native **x86_64** MCP server for desktop control on unlocked Intel Macs.
+Version 1.3 adds explicit screenshot geometry and a single-action verification
+workflow. It works with GPT-6 Astra and other MCP-capable models without model
+configuration inside the plugin. See the [release overview](../README.md).
 
 Related issues this works around:
 - [openai/codex#18404](https://github.com/openai/codex/issues/18404) — Computer Use stays "unavailable" on Intel even when MCP is toggled on.
@@ -11,17 +11,9 @@ Related issues this works around:
 
 ## Why this exists
 
-The official Codex Desktop `Computer Use` plugin bundles two Swift helper apps:
-
-- `SkyComputerUseService` (arm64)
-- `SkyComputerUseClient` (arm64)
-
-Both are Mach-O `arm64` only. Intel Macs have no `arm64 → x86_64` binary translator
-(Rosetta 2 only runs `x86_64` on Apple Silicon, not the reverse), so the MCP server
-advertised by the plugin crashes on startup.
-
-OpenAI ships no public source for these helpers and no universal build. This project
-reimplements the same tool surface as a plain Node.js (x86_64) MCP server using:
+This project was created after Intel installations encountered incompatible
+native Computer Use helpers. Official availability now depends on the app build;
+this server uses independent local primitives:
 
 - `screencapture` (macOS built-in) — screenshots
 - `cliclick` (Homebrew, universal) — mouse + basic keyboard
@@ -49,18 +41,11 @@ reimplements the same tool surface as a plain Node.js (x86_64) MCP server using:
 > server transparently falls back to the PyObjC bridge. The active backend is
 > reported in the startup log line (`ocr=swift` or `ocr=python`).
 >
-> **Accessibility backend.** The Accessibility tools (`get_ui_elements`,
-> `find_element`, `click_element`, `set_element_value`, `click_menu_item`,
-> window management, `wait_for_element`, `get_selected_text`) depend on the
-> native `dist/ax-helper` binary, also built with Xcode's `swiftc`. If it is
-> missing those tools report a clear "AX helper not built" error and the rest of
-> the server keeps working; the startup log shows `ax=on` / `ax=off`.
->
-> **CGEvent backend.** Precise scrolling, arbitrary key hold (`key_down`/`key_up`
-> for non-modifier keys) and `key_tap` use the native `dist/cgevent` binary. When
-> it is missing, `scroll` falls back to AppleScript/arrow keys, key hold is
-> limited to modifiers (via cliclick), and `key_tap` is unavailable. The startup
-> log shows `cg=on` / `cg=off`.
+> **Required native helpers in v1.3.** `dist/ax-helper` supplies app identity
+> and Accessibility verification; `dist/cgevent` supplies measured display
+> geometry and input. The server requires both and gives a clear setup error
+> if either is absent. `./install.sh` builds them or installs this release's
+> included Intel prebuilts. OCR remains optional with its PyObjC fallback.
 
 ## Requirements
 
@@ -175,13 +160,52 @@ If any tool returns an error like `assistive access is not allowed`, revisit the
 Accessibility list. You may need to toggle Codex off/on once after granting
 permission.
 
-## Exposed tools (52)
+## Exposed tools
+
+### Observe and verify (v1.3)
+
+`get_desktop_state` accepts `region?`, `max_width?` (default 1400),
+`include_ui?` (default true), and `max_elements?` (default 120, maximum 250).
+The returned screenshot metadata provides a `screenshot_id`, exact conversion
+and foreground app. AX/OCR coordinates are already screen points.
+
+For a visual click use `act_and_observe` with the observed app and image pixels:
+
+```json
+{
+  "app": "com.example.App",
+  "action": {"kind": "click", "screenshot_id": "ID_FROM_CAPTURE", "x": 380, "y": 220},
+  "expect": {"target": {"role": "AXStaticText", "value": "Saved"}},
+  "timeout_ms": 5000
+}
+```
+
+Other action kinds: `click_element` (`target`, optional `method: "press"` or
+`"coordinate"`), `type` (`text`), `key` (`keys`), and `scroll` (`direction`,
+`amount`, optional `pixels`). Without a screenshot reference, click coordinates
+are integer screen points. `expect.exact_value` checks an exact field value;
+`expect.present: false` waits for a matching element to disappear. `region`,
+`max_width` and `include_ui` control the returned observation.
+
+An already-satisfied expectation skips input. A successful OS call is reported
+as `action.status: "completed"`, independently of the postcondition status.
+Without `expect`, verification is only `observed`. Inspect the new image before
+continuing. A timeout or observation error never triggers an automatic retry.
+An input subprocess error is `uncertain`, since it may have already sent input.
+Text plus spacing exceeding a 45-second input budget is rejected before typing;
+split long text into smaller verified calls.
+
+Screenshot IDs live only in the current MCP process, expire after 120 seconds,
+and are invalidated by input through this server. This does not detect every
+external or same-app UI change: observe again after either. Regions must be fully
+contained in one active display; do not combine `region` and `display_index`.
+The updated CGEvent helper is required for measured screenshot geometry.
 
 ### Core mouse / keyboard / screen
 
 | Tool              | Arguments                                    | Notes                                     |
 | ----------------- | -------------------------------------------- | ----------------------------------------- |
-| `screenshot`      | `region?`, `display_index?`, `show_cursor?`, `max_width?` | Returns inline base64 PNG; `max_width` downscales for fewer tokens |
+| `screenshot` | `region?`, `display_index?`, `show_cursor?`, `max_width?` | Inline PNG plus `screenshot_id`, actual `imagePixels`, `screenBoundsPoints`, `imageToScreen`, timestamp and foreground identity |
 | `screen_size`     | —                                            | Main display, in points                   |
 | `cursor_position` | —                                            | Uses cliclick, no perms needed            |
 | `mouse_move`      | `x`, `y`                                     |                                           |
@@ -191,7 +215,7 @@ permission.
 | `double_click`    | `x?`, `y?`                                   |                                           |
 | `left_click_drag` | `from {x,y}`, `to {x,y}`                     | Press-drag-release                        |
 | `scroll`          | `direction`, `amount`, `x?`, `y?`, `pixels?`, `smooth?` | Real CGEvent wheel (both axes); `pixels`/`smooth` for fine glide; AppleScript fallback |
-| `type`            | `text`, `delay_ms?`                          | Unicode safe via AppleScript keystroke    |
+| `type` | `text`, `delay_ms?` | Native Unicode HID events; leaves the clipboard unchanged |
 | `key`             | `keys`                                       | e.g. `"cmd+c"`, `"Return"`, `"arrow-up"`  |
 | `wait`            | `ms`                                         | Capped at 60s                             |
 | `open_app`        | `name`                                       | Name / bundle id / `.app` path            |

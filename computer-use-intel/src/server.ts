@@ -2,6 +2,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { DesktopQueue } from "./workflow.js";
+import { captureObservation, observationResult, registerPerceptionTools, screenshots } from "./perception-tools.js";
 
 import {
   annotateScreen,
@@ -56,7 +58,7 @@ import {
 } from "./macos.js";
 
 const SERVER_NAME = "computer-use-intel";
-const SERVER_VERSION = "1.2.0";
+const SERVER_VERSION = "1.3.0";
 
 async function main(): Promise<void> {
   // Hard-fail early if cliclick is missing so the failure is visible in Codex's
@@ -67,6 +69,10 @@ async function main(): Promise<void> {
     );
     process.exit(2);
   }
+  if (!hasAx() || !hasCgEvent()) {
+    process.stderr.write("[computer-use-intel] v1.3 requires updated ax-helper and cgevent for app identity and measured screenshot geometry. Run ./install.sh (includes prebuilt Intel helpers).\n");
+    process.exit(2);
+  }
 
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
@@ -75,17 +81,36 @@ async function main(): Promise<void> {
       instructions:
         "Drop-in macOS 'Computer Use' MCP server for Intel (x86_64) Macs. " +
         "Uses cliclick, osascript, and screencapture under the hood. " +
-        "Coordinates are screen-space in points (origin = top-left of main display).",
+        "Coordinates are screen-space in points (origin = top-left of main display). " +
+        "Prefer get_desktop_state then act_and_observe for visual workflows. " +
+        "Image clicks use screenshot_id and image pixels; AX/OCR coordinates are already screen points. " +
+        "Verify the resulting state: dispatched input is not proof of success. " +
+        "Never run dependent desktop actions in parallel or automatically replay uncertain input.",
     },
   );
+
+  const queue = new DesktopQueue();
+  const readOnly = new Set(["screenshot", "screenshot_annotated", "screen_size", "cursor_position",
+    "get_desktop_state", "get_ui_elements", "find_element", "get_element_value", "list_windows",
+    "list_apps", "frontmost_app", "get_clipboard", "find_text", "ocr_screen", "get_pixel_color",
+    "wait_for_text", "wait_for_element", "wait_for_screen_change", "wait"]);
+  // Serialize every request against this shared desktop. Legacy input invalidates old image references.
+  const register = server.registerTool.bind(server);
+  server.registerTool = ((name: string, config: any, callback: any) => register(name, config,
+    (...args: any[]) => queue.run(async () => {
+      if (!readOnly.has(name) && name !== "act_and_observe") screenshots.invalidate();
+      return callback(...args);
+    }))) as typeof server.registerTool;
+  registerPerceptionTools(server);
 
   server.registerTool(
     "screenshot",
     {
       title: "Take screenshot",
       description:
-        "Capture a PNG of the entire screen (default), a specific display, or a rectangular region. " +
-        "Returns the image inline as base64 PNG so the model can see it.",
+        "Capture a PNG of the main display (default), a specific display, or a rectangular region. " +
+        "Returns inline PNG, exact image-to-screen geometry and a screenshot_id for act_and_observe image clicks. " +
+        "AX/OCR coordinates need no scaling. Take a fresh capture after UI changes.",
       inputSchema: {
         region: z
           .object({
@@ -112,25 +137,12 @@ async function main(): Promise<void> {
       },
     },
     async ({ region, display_index, show_cursor, max_width }) => {
-      const shot = await takeScreenshot({
+      return observationResult(await captureObservation({
         region,
         displayIndex: display_index,
         showCursor: show_cursor ?? false,
         maxWidth: max_width,
-      });
-      return {
-        content: [
-          {
-            type: "image",
-            data: shot.base64,
-            mimeType: "image/png",
-          },
-          {
-            type: "text",
-            text: `Captured ${shot.byteLength} bytes (PNG).`,
-          },
-        ],
-      };
+      }));
     },
   );
 
@@ -282,7 +294,8 @@ async function main(): Promise<void> {
     {
       title: "Type text",
       description:
-        "Type literal text, honoring Unicode (via AppleScript keystroke). Use the 'key' tool for combos.",
+        "Type literal Unicode text through native HID events without changing the clipboard. Use 'key' for combos. " +
+        "Text/spacing that exceeds a 45-second input budget is rejected before input; split long text into verified calls.",
       inputSchema: {
         text: z.string(),
         delay_ms: z
@@ -944,7 +957,7 @@ async function main(): Promise<void> {
           content: [{ type: "text", text: "OCR helper (vision-ocr) is not built. Run `npm run build`." }],
         };
       }
-      const { base64, byteLength, marks, backend } = await annotateScreen({
+      const { base64, byteLength, marks, backend, geometry } = await annotateScreen({
         region,
         displayIndex: display_index,
         fast,
@@ -953,12 +966,13 @@ async function main(): Promise<void> {
       });
       return {
         content: [
-          { type: "image", data: base64, mimeType: "image/png" },
+          { type: "image", data: base64, mimeType: "image/png", _meta: { "codex/imageDetail": "original" } },
           {
             type: "text",
             text:
               `Annotated ${byteLength} bytes (backend=${backend}). ` +
-              `Legend (index -> text @ x,y):\n${JSON.stringify(marks, null, 2)}`,
+              `Geometry: ${JSON.stringify(geometry)}\n` +
+              `Legend (index -> text @ screen-point x,y):\n${JSON.stringify(marks, null, 2)}`,
           },
         ],
       };
@@ -1189,7 +1203,8 @@ async function main(): Promise<void> {
       title: "Wait until the screen changes",
       description:
         "Capture a baseline, then poll until the screen (or a region) visibly changes or the timeout elapses. " +
-        "Use right after an action to confirm it had an effect before proceeding.",
+        "The baseline starts when this tool is called: it cannot prove that an earlier action changed the UI. " +
+        "For action postconditions use act_and_observe with expect instead.",
       inputSchema: {
         region: regionSchema,
         timeout_ms: z.number().int().positive().max(120_000).optional().describe("Default 10000."),

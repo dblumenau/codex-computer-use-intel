@@ -1,7 +1,7 @@
 {
   "name": "computer-use-intel",
-  "version": "1.2.0",
-  "description": "Computer Use for Intel (x86_64) Macs.\n\nAliases: @computer-use-intel, @computer-use, computer use, Computernutzung.\n\nDrop-in replacement for the arm64-only bundled Computer Use plugin. Lets Codex control this Mac (mouse, keyboard, scrolling, screenshots, OCR / find-text-on-screen, Accessibility UI tree, menus, windows, clipboard) using cliclick, screencapture, osascript and native x86_64 Swift helpers (Vision OCR, Accessibility, CGEvent).\n\nUse this plugin when the user asks to look at the screen, click, type, scroll, read on-screen text, or otherwise control local macOS apps on this Intel machine. Prefer the Accessibility tools (get_ui_elements / find_element / click_element / click_menu_item) over pixel/OCR clicking when possible.",
+  "version": "1.3.0",
+  "description": "Native desktop control for Intel (x86_64) Macs through MCP. Screenshots with exact image-to-screen geometry, compact Accessibility state, and single actions with checked postconditions. Works with GPT-6 Astra and other MCP-capable models; no model-specific API key or service required.",
   "author": {
     "name": "karateka"
   },
@@ -23,7 +23,7 @@
   "interface": {
     "displayName": "Computer Use (Intel)",
     "shortDescription": "Control this Intel Mac: mouse, keyboard, screen, OCR, Accessibility",
-    "longDescription": "An x86_64 drop-in replacement for the arm64-only bundled Computer Use plugin. Exposes 52 tools to control the local Mac: screenshots (incl. Set-of-Marks annotated), mouse/keyboard with modifier holds and CGEvent scrolling, on-device Vision OCR (find text on screen), the macOS Accessibility UI tree (read elements, click buttons/menu items, set field values), window management, clipboard and pixel sampling. Built for Intel Macs where the official Computer Use helpers (arm64-only) cannot run.",
+    "longDescription": "Control an unlocked Intel Mac using screenshots, mouse and keyboard input, on-device OCR and Accessibility. Version 1.3 adds screenshot references, verified action loops, app identity checks and exact coordinate conversion after Retina scaling, downscaling or cropping. Native x86_64 helpers are included.",
     "developerName": "karateka",
     "category": "Productivity",
     "capabilities": [

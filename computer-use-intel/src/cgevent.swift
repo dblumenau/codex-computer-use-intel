@@ -6,6 +6,14 @@
 // the host process (already needed for cliclick).
 //
 // Subcommands (JSON on stdout):
+//   cgevent click --x X --y Y [--button left|right|middle|double]
+//   cgevent type --text TEXT [--delay-ms M]
+//   cgevent displays
+//       Lists active displays and their global CoreGraphics bounds in points.
+//       `index` is the zero-based API index and `captureIndex` is the one-based
+//       index accepted by screencapture -D. `mainDisplayID` identifies the
+//       main display without relying on display order.
+//
 //   cgevent scroll --dy N [--dx N] [--x X --y Y] [--unit pixel|line]
 //                  [--steps N] [--delay-ms M]
 //       Posts scroll-wheel events. dy>0 scrolls UP, dy<0 scrolls DOWN;
@@ -34,7 +42,7 @@ func emit(_ obj: [String: Any]) -> Never {
 func fail(_ msg: String) -> Never { emit(["ok": false, "error": msg]) }
 
 var args = Array(CommandLine.arguments.dropFirst())
-guard let mode = args.first else { fail("usage: cgevent <scroll|keydown|keyup|tap> [...]") }
+guard let mode = args.first else { fail("usage: cgevent <displays|scroll|keydown|keyup|tap> [...]") }
 args.removeFirst()
 
 func opt(_ name: String) -> String? {
@@ -102,6 +110,75 @@ func postKey(_ code: CGKeyCode, down: Bool, flags: CGEventFlags) {
 // MARK: - Commands
 
 switch mode {
+case "click":
+    guard let xs = opt("--x"), let ys = opt("--y"), let x = Double(xs), let y = Double(ys),
+          x.isFinite, y.isFinite else { fail("click requires finite --x and --y") }
+    let kind = opt("--button") ?? "left"
+    guard ["left", "right", "middle", "double"].contains(kind) else { fail("invalid click button") }
+    let point = CGPoint(x: x, y: y)
+    let button: CGMouseButton = kind == "right" ? .right : kind == "middle" ? .center : .left
+    let down: CGEventType = kind == "right" ? .rightMouseDown : kind == "middle" ? .otherMouseDown : .leftMouseDown
+    let up: CGEventType = kind == "right" ? .rightMouseUp : kind == "middle" ? .otherMouseUp : .leftMouseUp
+    CGEvent(mouseEventSource: source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+    usleep(20_000)
+    for count in 1...(kind == "double" ? 2 : 1) {
+        guard let press = CGEvent(mouseEventSource: source, mouseType: down, mouseCursorPosition: point, mouseButton: button),
+              let release = CGEvent(mouseEventSource: source, mouseType: up, mouseCursorPosition: point, mouseButton: button) else { fail("could not create mouse event") }
+        press.setIntegerValueField(.mouseEventClickState, value: Int64(count))
+        release.setIntegerValueField(.mouseEventClickState, value: Int64(count))
+        press.post(tap: .cghidEventTap)
+        usleep(40_000)
+        release.post(tap: .cghidEventTap)
+        usleep(20_000)
+    }
+    emit(["ok": true, "button": kind, "x": x, "y": y])
+
+case "type":
+    guard let text = opt("--text") else { fail("type requires --text") }
+    let delayMs = intOpt("--delay-ms") ?? 0
+    guard delayMs >= 0 && delayMs <= 45_000 else { fail("typing delay must be between 0 and 45000 ms") }
+    for character in text {
+        let units = Array(String(character).utf16)
+        guard let press = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+              let release = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else { fail("could not create Unicode key event") }
+        units.withUnsafeBufferPointer { buffer in
+            press.keyboardSetUnicodeString(stringLength: units.count, unicodeString: buffer.baseAddress)
+            release.keyboardSetUnicodeString(stringLength: units.count, unicodeString: buffer.baseAddress)
+        }
+        press.flags = []
+        release.flags = []
+        press.post(tap: .cghidEventTap)
+        usleep(5_000)
+        release.post(tap: .cghidEventTap)
+        usleep(useconds_t(max(5, delayMs) * 1000))
+    }
+    emit(["ok": true, "characters": text.count])
+
+case "displays":
+    var displayIDs = [CGDirectDisplayID](repeating: 0, count: 32)
+    var displayCount: UInt32 = 0
+    let result = CGGetActiveDisplayList(UInt32(displayIDs.count), &displayIDs, &displayCount)
+    guard result == .success else { fail("CGGetActiveDisplayList failed: \(result.rawValue)") }
+    let mainID = CGMainDisplayID()
+    var displays: [[String: Any]] = []
+    for i in 0..<Int(displayCount) {
+        let displayID = displayIDs[i]
+        let rect = CGDisplayBounds(displayID)
+        displays.append([
+            "index": i,
+            "id": Int(displayID),
+            "captureIndex": i + 1,
+            "isMain": displayID == mainID,
+            "bounds": [
+                "x": rect.origin.x,
+                "y": rect.origin.y,
+                "width": rect.size.width,
+                "height": rect.size.height,
+            ],
+        ])
+    }
+    emit(["ok": true, "mainDisplayID": Int(mainID), "displays": displays])
+
 case "scroll":
     let dy = intOpt("--dy") ?? 0
     let dx = intOpt("--dx") ?? 0

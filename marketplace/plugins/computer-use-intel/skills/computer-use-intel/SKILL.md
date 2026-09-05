@@ -5,13 +5,43 @@ description: "Control this Intel (x86_64) Mac with Codex: look at the screen, cl
 
 # Computer Use (Intel)
 
-This plugin exposes the `computer-use-intel` MCP server, an x86_64 drop-in for the
-arm64-only bundled Computer Use plugin. Use it to control THIS Mac: perceive the
+This plugin exposes a model-independent `computer-use-intel` MCP server for
+native desktop control. Use it to control THIS Mac: perceive the
 screen and drive mouse, keyboard, windows and the clipboard.
 
 All coordinates are screen points (origin = top-left of the main display). The
 tools map OCR/Accessibility results straight onto these points, so a returned
 `x,y` can be passed directly to a click tool.
+
+## Preferred visual workflow (v1.3)
+
+1. Use `get_desktop_state` to receive a current screenshot, exact geometry,
+   frontmost app identity and compact visible Accessibility elements. Use
+   `region` for small text or controls; request full resolution when useful.
+2. Prefer `act_and_observe` for a single click, text entry, key or scroll. Supply
+   the expected frontmost app's bundle ID. If necessary, call `focus_app` first.
+   For a point identified visually, use the returned `screenshot_id` and x/y in
+   the returned image's pixels. For AX/OCR positions, omit `screenshot_id`:
+   these x/y values already represent screen points.
+3. When a specific result is known, add `expect` with an element matcher and
+   optionally `exact_value`. `matched` confirms this postcondition; `observed`
+   only means fresh state was returned. `already_satisfied` skips the input.
+4. Inspect the new screenshot/UI state. A completed input command or a timed-out
+   expectation does not prove the user's task succeeded. An uncertain action
+   must not be blindly repeated. If AXPress has no effect, inspect again and
+   explicitly choose `method: "coordinate"` for an appropriate element.
+
+Screenshot references are limited to this MCP process, expire after 120 seconds
+and are invalidated by input through this server. The app and display layout are
+checked before image clicks. External user input and same-app navigation can
+still invalidate a visual target: take a fresh screenshot after either occurs.
+No automatic fallback click is attempted after a successfully dispatched AXPress.
+
+In Codex, use its existing code-execution tool to inspect/filter tool results and
+orchestrate this workflow. Return image content blocks at their original supplied
+resolution. Keep dependent GUI actions sequential; do not launch parallel desktop
+mutations. A separate REPL or a model/API-key configuration inside this plugin is
+not needed for Astra.
 
 ## Choose the most reliable tool first
 
@@ -48,7 +78,8 @@ tools map OCR/Accessibility results straight onto these points, so a returned
 Synchronize with the UI instead of fixed sleeps:
 - `wait_for_element` (poll the Accessibility tree),
 - `wait_for_text` (poll OCR; returns a clickable coordinate),
-- `wait_for_screen_change` (confirm an action had a visible effect).
+- `wait_for_screen_change` (watch changes after the call starts; its baseline
+  cannot confirm an earlier action).
 
 ## Working pattern
 
@@ -65,10 +96,11 @@ Synchronize with the UI instead of fixed sleeps:
 - Requires macOS permissions for the Codex host process: Accessibility (mouse,
   keyboard, scroll, and all `get_ui_elements`/`click_*`/window tools) and Screen
   Recording (screenshots + OCR). If a tool reports "assistive access is not
-  allowed" or "could not create image from display", re-grant those in System
-  Settings → Privacy & Security.
+  allowed", check System Settings → Privacy & Security. If screen capture fails,
+  first check whether the screen is awake and unlocked; the error alone does not
+  establish a missing permission.
 - This is local control of the Mac in front of you. It does NOT work while the
-  screen is locked, and it is unrelated to the Settings → Computer Use page
-  (that is Codex Remote Control, an OpenAI-managed feature).
+  screen is locked. It is managed in Settings → Plugins; the app's own Computer
+  Use settings manage the official integrations separately.
 - When you show the user a screenshot, embed it inline in your final Markdown
   response.

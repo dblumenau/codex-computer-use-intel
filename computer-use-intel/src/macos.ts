@@ -4,6 +4,8 @@ import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { captureImageToFile, resolveCaptureBounds, type CaptureOpts } from "./capture.js";
+import { geometryFrom, readPngSize, type CaptureGeometry } from "./geometry.js";
 
 /**
  * Low-level macOS automation primitives for x86_64 Intel Macs.
@@ -14,7 +16,6 @@ import { fileURLToPath } from "node:url";
  */
 
 const CLICLICK = "/usr/local/bin/cliclick";
-const SCREENCAPTURE = "/usr/sbin/screencapture";
 const OSASCRIPT = "/usr/bin/osascript";
 const OPEN = "/usr/bin/open";
 const PBCOPY = "/usr/bin/pbcopy";
@@ -106,14 +107,6 @@ export async function open(appName: string, extraArgs: string[] = []): Promise<v
   await runCapture(OPEN, ["-a", appName, ...extraArgs]);
 }
 
-interface CaptureOpts {
-  region?: Region;
-  displayIndex?: number;
-  showCursor?: boolean;
-  /** Downscale to at most this pixel width (token-efficient screenshots). */
-  maxWidth?: number;
-}
-
 /** Downscale a PNG in place to at most maxWidth px (skips upscaling). */
 async function maybeDownscale(path: string, maxWidth?: number): Promise<void> {
   if (!maxWidth || maxWidth <= 0) return;
@@ -133,31 +126,20 @@ async function maybeDownscale(path: string, maxWidth?: number): Promise<void> {
  * deleting the file. Shared by takeScreenshot (base64) and the OCR helpers.
  */
 export async function captureToFile(opts: CaptureOpts): Promise<string> {
-  const tmp = join(tmpdir(), `cui-${Date.now()}-${Math.random().toString(36).slice(2)}.png`);
-  const args: string[] = ["-x", "-t", "png"];
-  if (opts.showCursor) args.push("-C");
-  if (opts.region) {
-    args.push("-R", `${opts.region.x},${opts.region.y},${opts.region.width},${opts.region.height}`);
-  } else if (typeof opts.displayIndex === "number") {
-    args.push("-D", String(opts.displayIndex + 1));
-  }
-  args.push(tmp);
-  await runCapture(SCREENCAPTURE, args, 20_000);
-  await maybeDownscale(tmp, opts.maxWidth);
-  return tmp;
+  return (await captureImageToFile(opts)).path;
 }
 
 export async function takeScreenshot(opts: CaptureOpts): Promise<{
   base64: string;
   byteLength: number;
   path: string;
+  geometry: CaptureGeometry;
 }> {
-  const tmp = await captureToFile(opts);
-  const buf = readFileSync(tmp);
+  const { path: tmp, geometry } = await captureImageToFile(opts);
   try {
-    unlinkSync(tmp);
-  } catch {}
-  return { base64: buf.toString("base64"), byteLength: buf.byteLength, path: tmp };
+    const buf = readFileSync(tmp);
+    return { base64: buf.toString("base64"), byteLength: buf.byteLength, path: tmp, geometry };
+  } finally { try { unlinkSync(tmp); } catch {} }
 }
 
 export interface OcrLine {
@@ -222,7 +204,7 @@ interface FindOpts {
 /** Map a normalized OCR line center onto absolute screen points. */
 async function mapToScreen(
   lines: OcrLine[],
-  region?: Region,
+  region: Region,
 ): Promise<{ text: string; confidence: number; x: number; y: number }[]> {
   let ox = 0;
   let oy = 0;
@@ -255,10 +237,10 @@ export async function findText(
   query: string,
   opts: FindOpts = {},
 ): Promise<{ matches: TextMatch[]; lineCount: number }> {
-  const tmp = await captureToFile({ region: opts.region, displayIndex: opts.displayIndex });
+  const { path: tmp, geometry } = await captureImageToFile({ region: opts.region, displayIndex: opts.displayIndex });
   try {
     const res = await ocrImage(tmp, opts.langs, opts.fast ?? false);
-    const mapped = await mapToScreen(res.lines, opts.region);
+    const mapped = await mapToScreen(res.lines, geometry.screenBoundsPoints);
     const re = opts.regex
       ? new RegExp(query, opts.caseSensitive ? "" : "i")
       : null;
@@ -286,10 +268,10 @@ export async function findText(
 export async function ocrScreen(
   opts: { region?: Region; displayIndex?: number; fast?: boolean; langs?: string[] } = {},
 ): Promise<{ text: string; lines: TextMatch[] }> {
-  const tmp = await captureToFile({ region: opts.region, displayIndex: opts.displayIndex });
+  const { path: tmp, geometry } = await captureImageToFile({ region: opts.region, displayIndex: opts.displayIndex });
   try {
     const res = await ocrImage(tmp, opts.langs, opts.fast ?? false);
-    const lines = await mapToScreen(res.lines, opts.region);
+    const lines = await mapToScreen(res.lines, geometry.screenBoundsPoints);
     return { text: lines.map((l) => l.text).join("\n"), lines };
   } finally {
     try {
@@ -362,13 +344,20 @@ export async function axDump(
 
 export async function axFind(m: AxMatch): Promise<{ count: number; elements: AxElement[] }> {
   const j = await runAx(["find", ...matchArgs(m)]);
+  if (m.index !== undefined) {
+    const element = j.elements[m.index];
+    return { count: element ? 1 : 0, elements: element ? [element] : [] };
+  }
   return { count: j.count, elements: j.elements };
 }
 
-export async function axClick(m: AxMatch): Promise<AxElement> {
+export async function axClick(m: AxMatch, opts: { coordinateFallback?: boolean } = {}): Promise<AxElement> {
   const j = await runAx(["click", ...matchArgs(m)]);
   // ax-helper either AXPresses (j.pressed) or reports center coords to click.
   if (j.pressFailed && j.center) {
+    if (opts.coordinateFallback === false) {
+      throw new Error("AXPress returned an error; input outcome is uncertain. No coordinate fallback was sent. Inspect the new state before choosing another action.");
+    }
     await click("left", j.center.x, j.center.y);
     return { ...(j as object), x: j.center.x, y: j.center.y } as unknown as AxElement;
   }
@@ -450,10 +439,10 @@ export interface Mark {
  */
 export async function annotateScreen(
   opts: { region?: Region; displayIndex?: number; fast?: boolean; langs?: string[]; maxWidth?: number } = {},
-): Promise<{ base64: string; byteLength: number; marks: Mark[]; backend: string }> {
+): Promise<{ base64: string; byteLength: number; marks: Mark[]; backend: string; geometry: CaptureGeometry }> {
   const backend = resolveOcrBackend();
   if (!backend) throw new Error("OCR backend not set up; cannot annotate.");
-  const tmp = await captureToFile({ region: opts.region, displayIndex: opts.displayIndex });
+  const { path: tmp, geometry } = await captureImageToFile({ region: opts.region, displayIndex: opts.displayIndex });
   const annot = tmp.replace(/\.png$/, "-annot.png");
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -470,9 +459,10 @@ export async function annotateScreen(
     const imgPath: string = res.annotated || tmp;
     await maybeDownscale(imgPath, opts.maxWidth ?? 1400);
     const buf = readFileSync(imgPath);
-    const mapped = await mapToScreen(res.lines, opts.region);
+    const mapped = await mapToScreen(res.lines, geometry.screenBoundsPoints);
     const marks: Mark[] = mapped.map((l, i) => ({ index: i, text: l.text, x: l.x, y: l.y }));
-    return { base64: buf.toString("base64"), byteLength: buf.byteLength, marks, backend: backend.kind };
+    return { base64: buf.toString("base64"), byteLength: buf.byteLength, marks, backend: backend.kind,
+      geometry: geometryFrom(geometry.screenBoundsPoints, readPngSize(buf), geometry.capturedAt) };
   } finally {
     for (const p of [tmp, annot]) {
       try {
@@ -724,14 +714,8 @@ export async function clipboardSet(text: string): Promise<void> {
 }
 
 export async function getScreenSize(): Promise<{ width: number; height: number }> {
-  const out = await osa(
-    'tell application "Finder" to get bounds of window of desktop'
-  );
-  const parts = out.trim().split(/,\s*/).map((s) => parseInt(s.trim(), 10));
-  if (parts.length === 4 && parts.every((n) => Number.isFinite(n))) {
-    return { width: parts[2] - parts[0], height: parts[3] - parts[1] };
-  }
-  throw new Error(`Could not parse screen size: ${out}`);
+  const { width, height } = await resolveCaptureBounds({});
+  return { width, height };
 }
 
 export async function getCursorPosition(): Promise<{ x: number; y: number }> {
@@ -750,6 +734,12 @@ export async function click(
   x?: number,
   y?: number,
 ): Promise<void> {
+  if (hasCgEvent()) {
+    const point = x !== undefined && y !== undefined ? { x, y } : await getCursorPosition();
+    const r = JSON.parse(await runCapture(CG_BIN, ["click", "--x", String(point.x), "--y", String(point.y), "--button", kind]));
+    if (!r.ok) throw new Error(`cgevent click: ${r.error}`);
+    return;
+  }
   const target = x !== undefined && y !== undefined ? `${x},${y}` : ".";
   const op = kind === "left" ? "c" : kind === "right" ? "rc" : kind === "middle" ? "mc" : "dc";
   await cliclick(`${op}:${target}`);
@@ -819,8 +809,24 @@ export async function scroll(
   }
 }
 
+export function typingTimeoutMs(text: string, delayMs = 0): number {
+  if (!Number.isInteger(delayMs) || delayMs < 0) throw new Error("Typing delay must be a non-negative integer.");
+  // Code points conservatively bound Swift grapheme events. Reserve 15 seconds
+  // for startup/scheduling and reject oversized input before posting any event.
+  const eventTime = Array.from(text).length * (5 + Math.max(5, delayMs));
+  if (eventTime > 45_000) throw new Error("Text and delay exceed the 45-second input budget. Split the text into smaller verified calls; no input was sent.");
+  return 15_000 + eventTime;
+}
+
 export async function typeText(text: string, delayMs = 0): Promise<void> {
   if (!text) return;
+  const timeoutMs = typingTimeoutMs(text, delayMs);
+  if (hasCgEvent()) {
+    const r = JSON.parse(await runCapture(CG_BIN, ["type", "--text", text, "--delay-ms", String(delayMs)],
+      timeoutMs));
+    if (!r.ok) throw new Error(`cgevent type: ${r.error}`);
+    return;
+  }
   if (delayMs > 0) {
     for (const ch of text) {
       await osa(`tell application "System Events" to keystroke ${asJSONString(ch)}`);
@@ -899,7 +905,12 @@ export async function pressKey(keys: string): Promise<void> {
 }
 
 export async function focusApp(name: string): Promise<void> {
-  await osa(`tell application ${asJSONString(name)} to activate`);
+  await runAx(["focus-app", "--app", name]);
+}
+
+export async function appIdentity(app?: string): Promise<{ pid: number; name: string; bundleId: string }> {
+  const r = await runAx(["app-info", ...(app ? ["--app", app] : [])]);
+  return { pid: r.pid, name: r.name, bundleId: r.bundleId };
 }
 
 export async function listRunningApps(): Promise<string[]> {

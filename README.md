@@ -3,15 +3,41 @@
 A drop-in **Computer Use** capability for **OpenAI Codex Desktop on Intel
 (x86_64) Macs**, packaged as a local Codex plugin.
 
-The official bundled Computer Use plugin ships **arm64-only** Swift helpers, so
-it cannot launch on Intel Macs. This project reimplements the same "let Codex
-control my Mac" surface as a small, self-contained MCP server built on native
-macOS tooling, and wraps it in a Codex plugin so it is available as
-`@computer-use-intel` in the composer.
+This project provides local desktop control through a self-contained MCP server
+built on native macOS tooling. It is available as `@computer-use-intel` in Codex.
+It was created when the bundled native helpers did not run on Intel. Official
+availability varies by app build; this plugin does not depend on OpenAI's native
+Computer Use service or replace the official browser integration.
+
+## Version 1.3: see, act, verify
+
+- Screenshots return their actual pixel size, captured rectangle in screen
+  points, conversion factors and a short-lived `screenshot_id`. Retina scaling,
+  downscaling and crops use the same explicit mapping.
+- `get_desktop_state` combines an image, frontmost app identity and a compact
+  visible Accessibility tree. The image preserves its supplied resolution;
+  request a small region to inspect fine text without sending the whole screen.
+- `act_and_observe` sends one input, optionally checks an expected element or
+  exact field value, then returns a fresh image and UI state. It distinguishes
+  matched, already satisfied, observed, timed out and failed checks. It never
+  replays input automatically.
+- Image clicks require the captured app and display layout to remain current.
+  References expire after 120 seconds or an input through this server. Requests
+  are serialized. External user input can still change a page; observe again
+  whenever the interface changes.
+- `focus_app` resolves bundle IDs and confirms that the app became frontmost.
+- Ordinary clicks and Unicode typing use the native HID event helper. Text
+  input preserves the clipboard, and postconditions verify actual delivery.
+
+This helps GPT-6 Astra use visual reasoning with less coordinate ambiguity and
+fewer tool round trips. The server remains model-independent. OpenAI recommends
+code execution for Astra and allows existing MCP UI tools to be retained;
+Codex can orchestrate these tools without an additional model API integration.
+See [OpenAI's Computer Use guide](https://developers.openai.com/api/docs/guides/tools-computer-use).
 
 ## What you get
 
-- **52 tools** to perceive and control the local Mac: screenshots (incl.
+- Tools to perceive and control the local Mac: screenshots (incl.
   Set-of-Marks annotated), mouse/keyboard (with modifier holds and real CGEvent
   scrolling), on-device **Vision OCR** ("find text on screen"), the macOS
   **Accessibility** UI tree (read elements, click buttons/menu items, set field
@@ -94,9 +120,28 @@ and relaunch.
 - The composer accepts **`@computer-use-intel`**.
 - Ask Codex: "Take a screenshot and tell me which app is in front."
 
-> Note: the `Settings → Computer Use` ("Computernutzung") page is a **different**
-> feature — Codex Remote Control (driving your Mac remotely / while locked). This
-> plugin does not appear there; it lives under `Settings → Plugins`.
+This plugin is managed under `Settings → Plugins`. The app's own Computer Use
+settings manage its official integrations separately.
+
+## Update
+
+Update the checkout at the path used by your existing marketplace, then run
+`./install.sh` again. A second checkout does not update a separately installed
+copy. Start a new Codex task after the plugin is refreshed; existing MCP
+processes may keep the previous code until they reconnect. If needed, restart
+Codex when no other tasks are running.
+
+Regression tests: `cd computer-use-intel && npm ci && npm test`.
+The tests cover coordinate transforms, expired references, serialized requests
+and verification failures without interacting with the desktop. Native builds
+and the interactive test fixture require macOS. See [CHANGELOG.md](CHANGELOG.md).
+
+To run the opt-in desktop smoke after building, use
+`node scripts/live-smoke.mjs --run` from `computer-use-intel/`. It opens a
+temporary fixture, clicks a target from a downscaled crop, enters a Unicode
+test string, checks expected/absent states, and closes only that fixture.
+Keep the Mac unlocked and avoid other desktop input during the smoke. Optional
+`--report /path/result.json` saves the check results and a PNG of the fixture.
 
 ## Uninstall
 
