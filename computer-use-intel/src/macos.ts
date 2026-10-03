@@ -726,6 +726,11 @@ export async function getCursorPosition(): Promise<{ x: number; y: number }> {
 }
 
 export async function moveCursor(x: number, y: number): Promise<void> {
+  if (hasCgEvent()) {
+    const r = JSON.parse(await runCapture(CG_BIN, ["move", "--x", String(x), "--y", String(y)]));
+    if (!r.ok) throw new Error(`cgevent move: ${r.error}`);
+    return;
+  }
   await cliclick(`m:${x},${y}`);
 }
 
@@ -754,6 +759,7 @@ export function validateLongPressDuration(durationMs: number): void {
 
 export async function longPress(x: number, y: number, durationMs: number): Promise<void> {
   validateLongPressDuration(durationMs);
+  await moveCursor(x, y);
   const release = `du:${x},${y}`;
   try {
     await runCapture(
@@ -773,7 +779,9 @@ export async function drag(
   from: { x: number; y: number },
   to: { x: number; y: number },
 ): Promise<void> {
+  await moveCursor(from.x, from.y);
   await cliclick(`dd:${from.x},${from.y}`, `dm:${to.x},${to.y}`, `du:${to.x},${to.y}`);
+  await moveCursor(to.x, to.y);
 }
 
 /** Low-level CGEvent scroll: dy>0 up, dy<0 down; dx>0 left, dx<0 right. */

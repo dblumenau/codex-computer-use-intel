@@ -15,7 +15,7 @@ const matcher = z.object({ role: z.string().optional(), title: z.string().option
 
 export async function captureObservation(opts: CaptureOpts & { includeUi?: boolean; maxElements?: number } = {}) {
   const before = await appIdentity();
-  const shot = await takeScreenshot(opts);
+  const shot = await takeScreenshot({ ...opts, showCursor: opts.showCursor ?? true });
   const frontmost = await appIdentity();
   if (before.pid !== frontmost.pid) throw new Error("Frontmost app changed during capture. Observe again.");
   const metadata = {

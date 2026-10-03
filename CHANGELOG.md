@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Draw the mouse cursor in `screenshot`, `get_desktop_state` and
+  `act_and_observe` captures by default; pass `show_cursor: false` to omit it.
+- Move the on-screen pointer with every click, move, long press, drag and
+  positioned scroll. The helper warps the cursor before posting input, since a
+  posted mouse-moved event alone leaves the drawn pointer in place.
+
 ## 1.3.0 — 2026-09-05
 
 - Add exact screenshot geometry derived from CoreGraphics display bounds and the

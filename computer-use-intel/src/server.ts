@@ -129,7 +129,7 @@ async function main(): Promise<void> {
           .nonnegative()
           .optional()
           .describe("0-based display index; omit for main display."),
-        show_cursor: z.boolean().optional().describe("Render the mouse cursor in the capture."),
+        show_cursor: z.boolean().optional().describe("Render the mouse cursor in the capture (default true)."),
         max_width: z
           .number()
           .int()
@@ -142,7 +142,7 @@ async function main(): Promise<void> {
       return observationResult(await captureObservation({
         region,
         displayIndex: display_index,
-        showCursor: show_cursor ?? false,
+        showCursor: show_cursor,
         maxWidth: max_width,
       }));
     },

@@ -205,7 +205,7 @@ The updated CGEvent helper is required for measured screenshot geometry.
 
 | Tool              | Arguments                                    | Notes                                     |
 | ----------------- | -------------------------------------------- | ----------------------------------------- |
-| `screenshot` | `region?`, `display_index?`, `show_cursor?`, `max_width?` | Inline PNG plus `screenshot_id`, actual `imagePixels`, `screenBoundsPoints`, `imageToScreen`, timestamp and foreground identity |
+| `screenshot` | `region?`, `display_index?`, `show_cursor?`, `max_width?` | Inline PNG plus `screenshot_id`, actual `imagePixels`, `screenBoundsPoints`, `imageToScreen`, timestamp and foreground identity. The mouse cursor is drawn unless `show_cursor` is false |
 | `screen_size`     | —                                            | Main display, in points                   |
 | `cursor_position` | —                                            | Uses cliclick, no perms needed            |
 | `mouse_move`      | `x`, `y`                                     |                                           |

@@ -107,9 +107,24 @@ func postKey(_ code: CGKeyCode, down: Bool, flags: CGEventFlags) {
     ev.post(tap: .cghidEventTap)
 }
 
+// A posted mouseMoved event alone leaves the on-screen pointer where it was;
+// the warp moves the drawn cursor, the event tells apps to update hover state.
+func movePointer(to point: CGPoint) {
+    CGWarpMouseCursorPosition(point)
+    CGAssociateMouseAndMouseCursorPosition(1)
+    CGEvent(mouseEventSource: source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+    usleep(20_000)
+}
+
 // MARK: - Commands
 
 switch mode {
+case "move":
+    guard let xs = opt("--x"), let ys = opt("--y"), let x = Double(xs), let y = Double(ys),
+          x.isFinite, y.isFinite else { fail("move requires finite --x and --y") }
+    movePointer(to: CGPoint(x: x, y: y))
+    emit(["ok": true, "x": x, "y": y])
+
 case "click":
     guard let xs = opt("--x"), let ys = opt("--y"), let x = Double(xs), let y = Double(ys),
           x.isFinite, y.isFinite else { fail("click requires finite --x and --y") }
@@ -119,8 +134,7 @@ case "click":
     let button: CGMouseButton = kind == "right" ? .right : kind == "middle" ? .center : .left
     let down: CGEventType = kind == "right" ? .rightMouseDown : kind == "middle" ? .otherMouseDown : .leftMouseDown
     let up: CGEventType = kind == "right" ? .rightMouseUp : kind == "middle" ? .otherMouseUp : .leftMouseUp
-    CGEvent(mouseEventSource: source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
-    usleep(20_000)
+    movePointer(to: point)
     for count in 1...(kind == "double" ? 2 : 1) {
         guard let press = CGEvent(mouseEventSource: source, mouseType: down, mouseCursorPosition: point, mouseButton: button),
               let release = CGEvent(mouseEventSource: source, mouseType: up, mouseCursorPosition: point, mouseButton: button) else { fail("could not create mouse event") }
@@ -187,9 +201,7 @@ case "scroll":
     let steps = max(1, intOpt("--steps") ?? 1)
     let delayMs = intOpt("--delay-ms") ?? 8
     if let xs = opt("--x"), let ys = opt("--y"), let x = Double(xs), let y = Double(ys) {
-        CGWarpMouseCursorPosition(CGPoint(x: x, y: y))
-        CGAssociateMouseAndMouseCursorPosition(1)
-        usleep(15_000)
+        movePointer(to: CGPoint(x: x, y: y))
     }
     // Split into steps and distribute any remainder onto the last event.
     func chunk(_ total: Int, _ i: Int) -> Int32 {
