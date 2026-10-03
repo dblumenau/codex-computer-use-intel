@@ -9,6 +9,14 @@ This plugin exposes a model-independent `computer-use-intel` MCP server for
 native desktop control. Use it to control THIS Mac: perceive the
 screen and drive mouse, keyboard, windows and the clipboard.
 
+This Intel Mac cannot use Codex's standard Computer Use/CUA surface. Do not call
+`mcp__cua_repl`, `cua.getState()`, `cua.getApp()`, or other `cua.*` APIs here.
+Invoke the tools from this plugin directly; their names begin with
+`mcp__computer_use_intel__` (for example,
+`mcp__computer_use_intel__get_desktop_state`). If those tools are not shown in
+the static tool list, discover their exact schemas from the available MCP tool
+catalog rather than falling back to CUA.
+
 All coordinates are screen points (origin = top-left of the main display). The
 tools map OCR/Accessibility results straight onto these points, so a returned
 `x,y` can be passed directly to a click tool.
@@ -63,7 +71,8 @@ not needed for Astra.
 3. Raw input when you already know the coordinates:
    - `screenshot` (supports `max_width` to save tokens), `mouse_move`,
      `left_click` / `right_click` / `middle_click` / `double_click`,
-     `triple_click`, `click_modified` (cmd/shift/ctrl/alt/fn + click),
+     `triple_click`, `long_press` (left button, configurable duration),
+     `click_modified` (cmd/shift/ctrl/alt/fn + click),
      `left_click_drag`, `hover`, `scroll` (real CGEvent wheel; `pixels`/`smooth`),
      `type`, `key`, `key_down` / `key_up` (hold any key via CGEvent),
      `key_tap` (works where AppleScript keystroke is ignored), `paste`.

@@ -39,6 +39,7 @@ import {
   keyUp,
   ocrBackend,
   listRunningApps,
+  longPress,
   moveCursor,
   ocrScreen,
   open as openApp,
@@ -206,6 +207,27 @@ async function main(): Promise<void> {
     async ({ x, y }) => {
       await click("left", x, y);
       return { content: [{ type: "text", text: "left_click ok" }] };
+    },
+  );
+
+  server.registerTool(
+    "long_press",
+    {
+      title: "Long press",
+      description:
+        "Press and hold the left mouse button at a point, then release it. " +
+        "duration_ms defaults to 1000 and is capped at 60000.",
+      inputSchema: {
+        x: z.number().int(),
+        y: z.number().int(),
+        duration_ms: z.number().int().min(1).max(60_000).default(1_000),
+      },
+    },
+    async ({ x, y, duration_ms }) => {
+      await longPress(x, y, duration_ms);
+      return {
+        content: [{ type: "text", text: `long_press ${x},${y} for ${duration_ms}ms ok` }],
+      };
     },
   );
 

@@ -745,6 +745,30 @@ export async function click(
   await cliclick(`${op}:${target}`);
 }
 
+export function validateLongPressDuration(durationMs: number): void {
+  if (!Number.isInteger(durationMs)) throw new Error("long-press duration must be an integer");
+  if (durationMs < 1 || durationMs > 60_000) {
+    throw new Error("long-press duration must be between 1 and 60000 ms");
+  }
+}
+
+export async function longPress(x: number, y: number, durationMs: number): Promise<void> {
+  validateLongPressDuration(durationMs);
+  const release = `du:${x},${y}`;
+  try {
+    await runCapture(
+      CLICLICK,
+      ["-m", "verbose", `dd:${x},${y}`, `w:${durationMs}`, release],
+      durationMs + 5_000,
+    );
+  } catch (error) {
+    // A failed subprocess may already have posted mouse-down. Avoid leaving the
+    // desktop in a held-button state before surfacing the original failure.
+    try { await cliclick(release); } catch { /* best effort */ }
+    throw error;
+  }
+}
+
 export async function drag(
   from: { x: number; y: number },
   to: { x: number; y: number },

@@ -210,6 +210,7 @@ The updated CGEvent helper is required for measured screenshot geometry.
 | `cursor_position` | —                                            | Uses cliclick, no perms needed            |
 | `mouse_move`      | `x`, `y`                                     |                                           |
 | `left_click`      | `x?`, `y?`                                   | Omit coords to click at current cursor    |
+| `long_press`      | `x`, `y`, `duration_ms?`                     | Hold left button; defaults to 1000 ms, maximum 60s |
 | `right_click`     | `x?`, `y?`                                   |                                           |
 | `middle_click`    | `x?`, `y?`                                   |                                           |
 | `double_click`    | `x?`, `y?`                                   |                                           |
