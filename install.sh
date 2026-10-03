@@ -69,9 +69,9 @@ say "Building TypeScript ..."
 
 # Old helpers do not implement newly added commands. A failed rebuild must use
 # this release's prebuilt helper, never silently retain an older executable.
-rm -f "$SERVER_DIR/dist/vision-ocr" "$SERVER_DIR/dist/ax-helper" "$SERVER_DIR/dist/cgevent"
+rm -f "$SERVER_DIR/dist/vision-ocr" "$SERVER_DIR/dist/ax-helper" "$SERVER_DIR/dist/cgevent" "$SERVER_DIR/dist/activity-overlay"
 say "Building native Swift helpers (prebuilt fallback available) ..."
-( cd "$SERVER_DIR" && npm run build:ocr && npm run build:ax && npm run build:cg ) || warn "Native build reported errors; will use prebuilt helpers below."
+( cd "$SERVER_DIR" && npm run build:ocr && npm run build:ax && npm run build:cg && npm run build:overlay ) || warn "Native build reported errors; will use prebuilt helpers below."
 
 [ -f "$SERVER_DIR/dist/server.js" ] || die "dist/server.js was not produced. Check the npm build output above."
 
@@ -96,6 +96,7 @@ ensure_bin() {
 ensure_bin vision-ocr
 ensure_bin ax-helper
 ensure_bin cgevent
+ensure_bin activity-overlay
 [ -x "$SERVER_DIR/dist/ax-helper" ] || die "ax-helper is required for v1.3 app identity and verification."
 [ -x "$SERVER_DIR/dist/cgevent" ] || die "cgevent is required for v1.3 screenshot geometry."
 

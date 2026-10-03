@@ -7,14 +7,15 @@
     "computer-use-intel-mcp": "dist/server.js"
   },
   "scripts": {
-    "build": "tsc && npm run build:ocr && npm run build:ax && npm run build:cg",
+    "build": "tsc && npm run build:ocr && npm run build:ax && npm run build:cg && npm run build:overlay",
     "build:ocr": "xcrun swiftc -target x86_64-apple-macos12.0 -O -o dist/vision-ocr src/vision-ocr.swift -framework Vision -framework AppKit || (echo '[build:ocr] swiftc failed - falling back to PyObjC OCR' && npm run build:ocr:py)",
     "build:ax": "xcrun swiftc -target x86_64-apple-macos12.0 -O -o dist/ax-helper src/ax-helper.swift -framework AppKit -framework ApplicationServices || echo '[build:ax] swiftc failed - Accessibility tools (get_ui_elements, click_element, menus, windows) will be unavailable'",
     "build:cg": "xcrun swiftc -target x86_64-apple-macos12.0 -O -o dist/cgevent src/cgevent.swift -framework CoreGraphics -framework AppKit || echo '[build:cg] swiftc failed - precise scroll + arbitrary key hold/tap (key_tap) will be unavailable'",
     "build:ocr:py": "sh scripts/setup-ocr.sh",
     "start": "node dist/server.js",
     "dev": "tsc && node dist/server.js",
-    "test": "tsc && node --test tests/*.test.mjs"
+    "test": "tsc && node --test tests/*.test.mjs",
+    "build:overlay": "xcrun swiftc -target x86_64-apple-macos12.0 -O -o dist/activity-overlay src/activity-overlay.swift -framework AppKit"
   },
   "keywords": [
     "mcp",

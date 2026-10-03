@@ -2,6 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { withActivity } from "./activity.js";
 import { DesktopQueue } from "./workflow.js";
 import { captureObservation, observationResult, registerPerceptionTools, screenshots } from "./perception-tools.js";
 
@@ -97,10 +98,10 @@ async function main(): Promise<void> {
   // Serialize every request against this shared desktop. Legacy input invalidates old image references.
   const register = server.registerTool.bind(server);
   server.registerTool = ((name: string, config: any, callback: any) => register(name, config,
-    (...args: any[]) => queue.run(async () => {
+    (...args: any[]) => queue.run(() => withActivity(async () => {
       if (!readOnly.has(name) && name !== "act_and_observe") screenshots.invalidate();
       return callback(...args);
-    }))) as typeof server.registerTool;
+    })))) as typeof server.registerTool;
   registerPerceptionTools(server);
 
   server.registerTool(

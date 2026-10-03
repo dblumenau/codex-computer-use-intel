@@ -363,3 +363,17 @@ env -i PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin HOME="$HOME" \
 ## License
 
 MIT
+
+## Desktop activity indicator
+
+Every tool call shows an animated rainbow rim on each display and a rainbow halo
+around the pointer. The halo shimmers with moving colors and a soft highlight.
+The 7-point rim has a soft inward glow, flowing colors and a
+gentle pulse. The click-through indicator remains visible during the call
+and fades out 10 seconds after the last call finishes. It follows Spaces and
+full-screen apps without taking focus. Screen captures briefly hide the indicator
+so screenshots, OCR and screen-change detection see the underlying desktop.
+
+Build the native companion with `npm run build:overlay` or `npm run build`.
+The installer also builds it, with `prebuilt/activity-overlay` as its fallback.
+If the companion is unavailable, desktop tools continue and log a diagnostic.

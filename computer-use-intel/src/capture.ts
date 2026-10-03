@@ -1,3 +1,4 @@
+import { withoutActivityOverlay } from "./activity.js";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { access, readFile, unlink } from "node:fs/promises";
@@ -282,7 +283,7 @@ export async function captureImageToFile(
   const path = join(tmpdir(), `cui-capture-${randomUUID()}.png`);
   let success = false;
   try {
-    await execFileText(SCREENCAPTURE, captureArgs(opts, bounds, display, path), 20_000);
+    await withoutActivityOverlay(() => execFileText(SCREENCAPTURE, captureArgs(opts, bounds, display, path), 20_000));
     const capturedAt = new Date().toISOString();
     const after = await readDisplaySnapshot();
     if (!sameDisplays(before, after)) {
