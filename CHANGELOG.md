@@ -7,6 +7,9 @@
 - Move the on-screen pointer with every click, move, long press, drag and
   positioned scroll. The helper warps the cursor before posting input, since a
   posted mouse-moved event alone leaves the drawn pointer in place.
+- Glide the pointer to its target in eased steps (80–300 ms by distance)
+  instead of teleporting, and shed a fading trail of rainbow sparkles along
+  its path while the activity overlay is showing.
 
 ## 1.3.0 — 2026-09-05
 

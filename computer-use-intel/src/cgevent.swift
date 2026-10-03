@@ -109,7 +109,23 @@ func postKey(_ code: CGKeyCode, down: Bool, flags: CGEventFlags) {
 
 // A posted mouseMoved event alone leaves the on-screen pointer where it was;
 // the warp moves the drawn cursor, the event tells apps to update hover state.
+// The pointer glides there in small eased warps so the motion is visible.
 func movePointer(to point: CGPoint) {
+    let start = CGEvent(source: nil)?.location ?? point
+    let distance = hypot(point.x - start.x, point.y - start.y)
+    if distance > 3 {
+        let duration = min(0.3, 0.08 + Double(distance) / 6000)
+        let began = Date()
+        // Clock-driven, so slow warps shorten the step count instead of the glide overrunning.
+        while true {
+            let t = CGFloat(Date().timeIntervalSince(began) / duration)
+            if t >= 1 { break }
+            let eased = t * t * (3 - 2 * t)
+            CGWarpMouseCursorPosition(CGPoint(x: start.x + (point.x - start.x) * eased,
+                                              y: start.y + (point.y - start.y) * eased))
+            usleep(8_000)
+        }
+    }
     CGWarpMouseCursorPosition(point)
     CGAssociateMouseAndMouseCursorPosition(1)
     CGEvent(mouseEventSource: source, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)

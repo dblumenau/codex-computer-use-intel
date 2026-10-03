@@ -69,7 +69,71 @@ final class RainbowView: NSView {
         breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
         rim.add(breathe, forKey: "breathe")
     }
+    // Sparkles shed along the pointer's path: each drifts, twinkles and fades.
+    struct Sparkle {
+        let origin: NSPoint
+        let drift: CGVector
+        let born: TimeInterval
+        let life: TimeInterval
+        let hue: CGFloat
+        let size: CGFloat
+        let spin: CGFloat
+        func position(at time: TimeInterval) -> NSPoint {
+            let age = CGFloat(time - born)
+            return NSPoint(x: origin.x + drift.dx * age, y: origin.y + drift.dy * age - 5 * age * age)
+        }
+    }
+    var sparkles: [Sparkle] = []
+    var lastSample: TimeInterval = 0
+    private var trailHue: CGFloat = 0
+    func shed(from a: NSPoint, to b: NSPoint, at time: TimeInterval) {
+        let distance = hypot(b.x - a.x, b.y - a.y)
+        let count = min(48, max(1, Int(distance / 7)))
+        for i in 0..<count {
+            let t = (CGFloat(i) + .random(in: 0...1)) / CGFloat(count)
+            sparkles.append(Sparkle(
+                origin: NSPoint(x: a.x + (b.x - a.x) * t + .random(in: -5...5), y: a.y + (b.y - a.y) * t + .random(in: -5...5)),
+                drift: CGVector(dx: .random(in: -7...7), dy: .random(in: -3...9)),
+                born: time, life: .random(in: 3.6...5.0),
+                hue: (trailHue + distance * t / 520).truncatingRemainder(dividingBy: 1),
+                size: .random(in: 3.5...8), spin: .random(in: 0...(2 * .pi))))
+        }
+        trailHue = (trailHue + distance / 520).truncatingRemainder(dividingBy: 1)
+        if sparkles.count > 1200 { sparkles.removeFirst(sparkles.count - 1200) }
+    }
+    func tickSparkles(at time: TimeInterval) {
+        for s in sparkles {
+            let p = s.position(at: time)
+            setNeedsDisplay(NSRect(x: p.x - 16, y: p.y - 16, width: 32, height: 32))
+        }
+        sparkles.removeAll { time - $0.born >= $0.life }
+    }
+    private func drawSparkles(at time: TimeInterval) {
+        for s in sparkles {
+            let progress = CGFloat((time - s.born) / s.life)
+            guard progress < 1 else { continue }
+            let p = s.position(at: time)
+            let twinkle = 0.65 + 0.35 * sin(CGFloat(time) * 18 + s.spin * 3)
+            let alpha = pow(1 - progress, 1.4) * twinkle
+            let radius = s.size * (1 - 0.5 * progress)
+            let color = NSColor(calibratedHue: s.hue, saturation: 0.75, brightness: 1, alpha: 1)
+            color.withAlphaComponent(alpha * 0.22).setFill()
+            NSBezierPath(ovalIn: NSRect(x: p.x - radius * 1.5, y: p.y - radius * 1.5, width: radius * 3, height: radius * 3)).fill()
+            let star = NSBezierPath()
+            let angle = s.spin + CGFloat(time - s.born) * 1.8
+            for k in 0..<8 {
+                let r = k % 2 == 0 ? radius : radius * 0.26
+                let a = angle + CGFloat(k) * .pi / 4
+                let v = NSPoint(x: p.x + cos(a) * r, y: p.y + sin(a) * r)
+                if k == 0 { star.move(to: v) } else { star.line(to: v) }
+            }
+            star.close()
+            color.blended(withFraction: 0.45, of: .white)!.withAlphaComponent(alpha).setFill()
+            star.fill()
+        }
+    }
     override func draw(_ dirtyRect: NSRect) {
+        drawSparkles(at: Date.timeIntervalSinceReferenceDate)
         if let p = pointer {
             let time = Date.timeIntervalSinceReferenceDate
             let phase = time * 0.055
@@ -103,7 +167,7 @@ final class Overlay {
     init() {
         rebuild()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in self?.rebuild() }
-        timer = Timer.scheduledTimer(withTimeInterval: 1 / 30, repeats: true) { [weak self] _ in self?.update() }
+        timer = Timer.scheduledTimer(withTimeInterval: 1 / 60, repeats: true) { [weak self] _ in self?.update() }
     }
     func rebuild() {
         windows.forEach { $0.orderOut(nil) }
@@ -130,6 +194,14 @@ final class Overlay {
                 w.alphaValue = active > 0 ? 1 : min(1, max(0, remaining / 0.35))
                 let view = w.contentView as! RainbowView
                 let next = w.frame.contains(mouse) ? NSPoint(x: mouse.x - w.frame.minX, y: mouse.y - w.frame.minY) : nil
+                let now = Date.timeIntervalSinceReferenceDate
+                // A stale previous sample would draw a trail the pointer never travelled.
+                if let from = view.pointer, let to = next, now - view.lastSample < 0.25,
+                   hypot(to.x - from.x, to.y - from.y) > 1.5 {
+                    view.shed(from: from, to: to, at: now)
+                }
+                if next != nil { view.lastSample = now }
+                view.tickSparkles(at: now)
                 if next != nil || next != view.pointer {
                     for point in [view.pointer, next].compactMap({ $0 }) {
                         view.setNeedsDisplay(NSRect(x: point.x - 26, y: point.y - 26, width: 52, height: 52))
@@ -137,7 +209,10 @@ final class Overlay {
                     view.pointer = next
                 }
                 if !w.isVisible { w.orderFrontRegardless() }
-            } else if w.isVisible { w.orderOut(nil) }
+            } else if w.isVisible {
+                (w.contentView as! RainbowView).sparkles.removeAll()
+                w.orderOut(nil)
+            }
         }
     }
     func command(_ line: String) {
