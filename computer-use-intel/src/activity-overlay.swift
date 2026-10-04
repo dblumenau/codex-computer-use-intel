@@ -47,6 +47,11 @@ final class RainbowView: NSView {
         context.setStrokeColor(NSColor.white.cgColor)
         context.setLineWidth(7)
         context.strokePath()
+        // The rim runs square to the screen edge; only its inner edge is rounded.
+        context.addRect(bounds)
+        context.addPath(path)
+        context.setFillColor(NSColor.white.cgColor)
+        context.fillPath(using: .evenOdd)
         let mask = CALayer()
         mask.frame = bounds
         mask.contents = context.makeImage()
