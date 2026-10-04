@@ -1,7 +1,9 @@
 # Changelog
 
-## Unreleased
+## 1.3.1 — 2026-10-04
 
+- Fill the activity rim out to the screen corners: its outer edge is square to
+  the display while the inner edge keeps its rounded curve and glow.
 - Draw the mouse cursor in `screenshot`, `get_desktop_state` and
   `act_and_observe` captures by default; pass `show_cursor: false` to omit it.
 - Move the on-screen pointer with every click, move, long press, drag and

@@ -1,6 +1,6 @@
 {
   "name": "computer-use-intel",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Native desktop control for Intel (x86_64) Macs through MCP. Screenshots with exact image-to-screen geometry, compact Accessibility state, and single actions with checked postconditions. Works with GPT-6 Astra and other MCP-capable models; no model-specific API key or service required.",
   "author": {
     "name": "karateka"

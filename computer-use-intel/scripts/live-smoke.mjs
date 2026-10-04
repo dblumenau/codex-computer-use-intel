@@ -17,7 +17,7 @@ const helper = join(root, 'dist/ax-helper');
 const original = JSON.parse(execFileSync(helper, ['app-info'], { encoding: 'utf8' }));
 const report = { checkedAt: new Date().toISOString(), outcome: 'failed', checks: [] };
 let fixturePid;
-const client = new Client({ name: 'computer-use-intel-live-smoke', version: '1.3.0' });
+const client = new Client({ name: 'computer-use-intel-live-smoke', version: '1.3.1' });
 const transport = new StdioClientTransport({ command: process.execPath, args: [join(root, 'dist/server.js')], stderr: 'pipe' });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function call(name, args = {}) {
