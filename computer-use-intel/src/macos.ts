@@ -15,7 +15,7 @@ import { geometryFrom, readPngSize, type CaptureGeometry } from "./geometry.js";
  * stderr as Error for clean MCP error propagation.
  */
 
-const CLICLICK = "/usr/local/bin/cliclick";
+const CLICLICK = process.env.CLICLICK ?? (process.arch === "arm64" ? "/opt/homebrew/bin/cliclick" : "/usr/local/bin/cliclick");
 const OSASCRIPT = "/usr/bin/osascript";
 const OPEN = "/usr/bin/open";
 const PBCOPY = "/usr/bin/pbcopy";
