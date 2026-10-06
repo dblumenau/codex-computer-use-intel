@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.2 — 2026-10-06
+
+- Build the native helpers for the host architecture, so the server also runs
+  natively on Apple Silicon.
+- Find `cliclick` under `/opt/homebrew` on Apple Silicon; `CLICLICK` overrides
+  the path.
+
 ## 1.3.1 — 2026-10-04
 
 - Fill the activity rim out to the screen corners: its outer edge is square to
