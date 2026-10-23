@@ -33,6 +33,7 @@ import {
   hasAx,
   hasCgEvent,
   hasOcr,
+  keepOcrWarm,
   hideApp,
   hover,
   keyDown,
@@ -1253,6 +1254,7 @@ async function main(): Promise<void> {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  keepOcrWarm();
 
   // Log a single startup line to stderr so Codex can confirm the server came up.
   process.stderr.write(

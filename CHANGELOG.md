@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Warm Vision OCR at startup and again after 10 minutes without accurate OCR.
+  macOS evicts the recognizer's model when idle, and a cold load takes over a
+  minute, which made the first `find_text` time out. The OCR limit rises from
+  30 to 120 seconds so a cold call is slow rather than failed.
+
 ## 1.4.0 — 2026-10-23
 
 - Capture the frontmost window by default in `screenshot`, `get_desktop_state`,

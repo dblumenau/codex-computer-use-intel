@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -181,8 +181,38 @@ export async function ocrImage(
   const args = [...backend.baseArgs, imagePath];
   if (langs && langs.length) args.push("--lang", langs.join(","));
   if (fast) args.push("--fast");
-  const out = await runCapture(backend.cmd, args, 30_000);
+  const out = await runCapture(backend.cmd, args, OCR_TIMEOUT_MS);
+  if (!fast) lastAccurateOcr = Date.now();
   return JSON.parse(out) as OcrResult;
+}
+
+// Vision's accurate recognizer loads its model from a system cache that macOS
+// evicts after a while idle; a cold load takes over a minute, a warm one under
+// a second. Each OCR is a fresh helper process, so warming means running one.
+const OCR_TIMEOUT_MS = 120_000;
+const OCR_REWARM_IDLE_MS = 10 * 60_000;
+const BLANK_PNG = "iVBORw0KGgoAAAANSUhEUgAAAEAAAAAgCAIAAAAt/+nTAAAAPklEQVR4nO3PMQ0AMAzAsPInvYLYYVWKESTzjhsd8KsBrQGtAa0BrQGtAa0BrQGtAa0BrQGtAa0BrQGtAW0BfqHpWg1AJrYAAAAASUVORK5CYII=";
+let lastAccurateOcr = 0;
+
+async function warmOcr(): Promise<void> {
+  if (Date.now() - lastAccurateOcr < OCR_REWARM_IDLE_MS) return;
+  const path = join(tmpdir(), `cui-ocr-warm-${process.pid}.png`);
+  writeFileSync(path, Buffer.from(BLANK_PNG, "base64"));
+  try {
+    await ocrImage(path);
+  } finally {
+    try {
+      unlinkSync(path);
+    } catch {}
+  }
+}
+
+/** Warm the OCR model now and whenever accurate OCR has sat idle long enough to go cold. */
+export function keepOcrWarm(): void {
+  if (resolveOcrBackend()?.kind !== "swift") return;
+  const warm = () => warmOcr().catch((e) => process.stderr.write(`[computer-use-intel] OCR warm-up failed: ${e}\n`));
+  void warm();
+  setInterval(warm, OCR_REWARM_IDLE_MS).unref();
 }
 
 export interface TextMatch {
@@ -454,7 +484,8 @@ export async function annotateScreen(
       const args = [tmp, "--annotate", annot];
       if (opts.langs?.length) args.push("--lang", opts.langs.join(","));
       if (opts.fast) args.push("--fast");
-      res = JSON.parse(await runCapture(backend.cmd, args, 30_000));
+      res = JSON.parse(await runCapture(backend.cmd, args, OCR_TIMEOUT_MS));
+      if (!opts.fast) lastAccurateOcr = Date.now();
     } else {
       // PyObjC fallback can't draw boxes; return the raw screenshot with marks.
       res = await ocrImage(tmp, opts.langs, opts.fast ?? false);
