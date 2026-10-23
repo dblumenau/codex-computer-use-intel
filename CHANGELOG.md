@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 — 2026-10-23
 
 - Capture the frontmost window by default in `screenshot`, `get_desktop_state`,
   `act_and_observe` and `screenshot_annotated`, instead of the whole main
