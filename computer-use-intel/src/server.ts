@@ -62,7 +62,7 @@ import {
 } from "./macos.js";
 
 const SERVER_NAME = "computer-use-intel";
-const SERVER_VERSION = "1.4.0";
+const SERVER_VERSION = "1.4.1";
 
 async function main(): Promise<void> {
   // Hard-fail early if cliclick is missing so the failure is visible in Codex's

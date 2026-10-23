@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.1 — 2026-10-23
 
 - Warm Vision OCR at startup and again after 10 minutes without accurate OCR.
   macOS evicts the recognizer's model when idle, and a cold load takes over a
