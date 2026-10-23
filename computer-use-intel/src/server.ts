@@ -4,10 +4,11 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { withActivity } from "./activity.js";
 import { DesktopQueue } from "./workflow.js";
-import { captureObservation, observationResult, registerPerceptionTools, screenshots } from "./perception-tools.js";
+import { captureObservation, captureTargetSchema, observationResult, registerPerceptionTools, resolveScope, screenshots } from "./perception-tools.js";
 
 import {
   annotateScreen,
+  appIdentity,
   axClick,
   axDump,
   axFind,
@@ -85,6 +86,8 @@ async function main(): Promise<void> {
         "Uses cliclick, osascript, and screencapture under the hood. " +
         "Coordinates are screen-space in points (origin = top-left of main display). " +
         "Prefer get_desktop_state then act_and_observe for visual workflows. " +
+        "Captures default to the frontmost window; pass app to see another app's window, full_screen for the display. " +
+        "A click into an app that is not frontmost usually only activates it: focus_app first, then click. " +
         "Image clicks use screenshot_id and image pixels; AX/OCR coordinates are already screen points. " +
         "Verify the resulting state: dispatched input is not proof of success. " +
         "Never run dependent desktop actions in parallel or automatically replay uncertain input.",
@@ -110,7 +113,7 @@ async function main(): Promise<void> {
     {
       title: "Take screenshot",
       description:
-        "Capture a PNG of the main display (default), a specific display, or a rectangular region. " +
+        "Capture a PNG of the frontmost window (default), another app's window, a display, or a rectangular region. " +
         "Returns inline PNG, exact image-to-screen geometry and a screenshot_id for act_and_observe image clicks. " +
         "AX/OCR coordinates need no scaling. Take a fresh capture after UI changes.",
       inputSchema: {
@@ -123,12 +126,13 @@ async function main(): Promise<void> {
           })
           .optional()
           .describe("Optional rectangle in screen points."),
+        ...captureTargetSchema,
         display_index: z
           .number()
           .int()
           .nonnegative()
           .optional()
-          .describe("0-based display index; omit for main display."),
+          .describe("0-based display index to capture whole; implies full_screen."),
         show_cursor: z.boolean().optional().describe("Render the mouse cursor in the capture (default true)."),
         max_width: z
           .number()
@@ -138,9 +142,11 @@ async function main(): Promise<void> {
           .describe("Downscale to at most this pixel width (token-efficient; e.g. 1280). Skips upscaling."),
       },
     },
-    async ({ region, display_index, show_cursor, max_width }) => {
+    async ({ region, app, full_screen, display_index, show_cursor, max_width }) => {
       return observationResult(await captureObservation({
         region,
+        app,
+        fullScreen: full_screen,
         displayIndex: display_index,
         showCursor: show_cursor,
         maxWidth: max_width,
@@ -959,9 +965,11 @@ async function main(): Promise<void> {
       description:
         "Screenshot + on-device OCR with numbered red boxes drawn over every recognized text line. Returns the " +
         "annotated image plus a legend mapping each number to its text and clickable screen point. Workflow: " +
-        "look at the image, pick a number, then left_click the legend's x,y. Great for dense UIs.",
+        "look at the image, pick a number, then left_click the legend's x,y. Great for dense UIs. " +
+        "Captures the frontmost window unless app, full_screen, display_index or region says otherwise.",
       inputSchema: {
         region: regionSchema,
+        ...captureTargetSchema,
         display_index: z.number().int().nonnegative().optional(),
         fast: z.boolean().optional(),
         lang: z.array(z.string()).optional(),
@@ -973,15 +981,18 @@ async function main(): Promise<void> {
           .describe("Downscale the returned image to at most this width (default 1400)."),
       },
     },
-    async ({ region, display_index, fast, lang, max_width }) => {
+    async ({ region, app, full_screen, display_index, fast, lang, max_width }) => {
       if (!ocrAvailable) {
         return {
           isError: true,
           content: [{ type: "text", text: "OCR helper (vision-ocr) is not built. Run `npm run build`." }],
         };
       }
+      const target = await appIdentity(app);
+      const { region: captureRegion, scope } = await resolveScope(
+        { region, app, fullScreen: full_screen, displayIndex: display_index }, target);
       const { base64, byteLength, marks, backend, geometry } = await annotateScreen({
-        region,
+        region: captureRegion,
         displayIndex: display_index,
         fast,
         langs: lang,
@@ -993,7 +1004,7 @@ async function main(): Promise<void> {
           {
             type: "text",
             text:
-              `Annotated ${byteLength} bytes (backend=${backend}). ` +
+              `Annotated ${byteLength} bytes (backend=${backend}, scope=${JSON.stringify(scope)}). ` +
               `Geometry: ${JSON.stringify(geometry)}\n` +
               `Legend (index -> text @ screen-point x,y):\n${JSON.stringify(marks, null, 2)}`,
           },

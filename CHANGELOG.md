@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Capture the frontmost window by default in `screenshot`, `get_desktop_state`,
+  `act_and_observe` and `screenshot_annotated`, instead of the whole main
+  display. `full_screen: true` restores the display capture, and `app` captures
+  another app's window without focusing it. Metadata reports `captureScope`.
+- `ax-helper windows` reports which window is focused and which is main.
+
 ## 1.3.2 — 2026-10-06
 
 - Build the native helpers for the host architecture, so the server also runs

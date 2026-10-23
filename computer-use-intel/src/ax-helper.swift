@@ -305,6 +305,8 @@ case "windows":
     guard let wins = attr(root, kAXWindowsAttribute as String) as? [AXUIElement] else {
         emit(["ok": true, "count": 0, "windows": []])
     }
+    let focusedWin = attr(root, kAXFocusedWindowAttribute as String).map { $0 as! AXUIElement }
+    let mainWin = attr(root, kAXMainWindowAttribute as String).map { $0 as! AXUIElement }
     var out: [[String: Any]] = []
     for (i, w) in wins.enumerated() {
         let p = point(w) ?? .zero
@@ -314,6 +316,8 @@ case "windows":
             "index": i,
             "title": strAttr(w, kAXTitleAttribute as String) ?? "",
             "minimized": minimized,
+            "focused": focusedWin.map { CFEqual($0, w) } ?? false,
+            "main": mainWin.map { CFEqual($0, w) } ?? false,
             "frame": ["x": Int(p.x), "y": Int(p.y), "w": Int(s.width), "h": Int(s.height)],
         ])
     }

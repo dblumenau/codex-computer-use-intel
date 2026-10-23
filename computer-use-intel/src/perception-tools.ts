@@ -1,25 +1,67 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { imagePointToScreen } from "./geometry.js";
-import { currentDisplayLayout, resolveCaptureBounds, type CaptureOpts } from "./capture.js";
+import { clipToDisplay, currentDisplayLayout, resolveCaptureBounds, type CaptureOpts, type Region } from "./capture.js";
 import { ScreenshotStore, performAndObserve } from "./workflow.js";
-import { appIdentity, axDump, axFind, axClick, click, pressKey, scroll,
+import { appIdentity, axDump, axWindows, axFind, axClick, click, pressKey, scroll,
   takeScreenshot, typeText, typingTimeoutMs, type AxMatch } from "./macos.js";
 
 export const screenshots = new ScreenshotStore();
 const region = z.object({ x: z.number().int(), y: z.number().int(),
   width: z.number().int().positive(), height: z.number().int().positive() });
+export const captureTargetSchema = {
+  app: z.string().min(1).optional().describe("Capture this app's window (name or bundle ID) without focusing it. Default: the frontmost app's window."),
+  full_screen: z.boolean().optional().describe("Capture the whole display instead of one window. Costly on wide displays; use only when you need it."),
+};
 const matcher = z.object({ role: z.string().optional(), title: z.string().optional(),
   value: z.string().optional(), index: z.number().int().nonnegative().optional() })
   .refine(m => Boolean(m.role || m.title || m.value), "Supply role, title or value to identify an element.");
 
-export async function captureObservation(opts: CaptureOpts & { includeUi?: boolean; maxElements?: number } = {}) {
+export type CaptureScope = { kind: "region" | "display" } | { kind: "window"; app: string; title: string };
+
+/**
+ * An app's focused window (main or first visible as fallbacks), clipped to the
+ * display it sits on. Undefined when the app has no visible window or AX cannot
+ * read it.
+ */
+export async function appWindowRegion(pid: number): Promise<{ region: Region; title: string } | undefined> {
+  try {
+    const wins = (await axWindows(undefined, pid)).filter(w => !w.minimized && w.frame.w > 0 && w.frame.h > 0);
+    const win = wins.find(w => w.focused) ?? wins.find(w => w.main) ?? wins[0];
+    if (!win) return undefined;
+    const region = await clipToDisplay({ x: win.frame.x, y: win.frame.y, width: win.frame.w, height: win.frame.h });
+    return region && { region, title: win.title };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Capture target for image-returning tools: an explicit region or display wins,
+ * `fullScreen` asks for the display, otherwise the target app's window. Without
+ * a named app a windowless frontmost app falls back to the display.
+ */
+export async function resolveScope(opts: { region?: Region; displayIndex?: number; fullScreen?: boolean; app?: string },
+  target: { pid: number; name: string }): Promise<{ region?: Region; scope: CaptureScope }> {
+  if (opts.region) return { region: opts.region, scope: { kind: "region" } };
+  if (opts.fullScreen || opts.displayIndex !== undefined) return { scope: { kind: "display" } };
+  const win = await appWindowRegion(target.pid);
+  if (win) return { region: win.region, scope: { kind: "window", app: target.name, title: win.title } };
+  if (opts.app) throw new Error(`${target.name} has no visible window to capture. Pass full_screen or region instead.`);
+  return { scope: { kind: "display" } };
+}
+
+export async function captureObservation(opts: CaptureOpts & { app?: string; fullScreen?: boolean;
+  includeUi?: boolean; maxElements?: number } = {}) {
   const before = await appIdentity();
-  const shot = await takeScreenshot({ ...opts, showCursor: opts.showCursor ?? true });
+  const target = opts.app ? await appIdentity(opts.app) : before;
+  const { region, scope } = await resolveScope(opts, target);
+  const shot = await takeScreenshot({ ...opts, region, showCursor: opts.showCursor ?? true });
   const frontmost = await appIdentity();
   if (before.pid !== frontmost.pid) throw new Error("Frontmost app changed during capture. Observe again.");
   const metadata = {
-    screenshot_id: screenshots.add(shot.geometry, frontmost.pid),
+    screenshot_id: screenshots.add(shot.geometry, target.pid),
+    captureScope: scope,
     ...shot.geometry,
     frontmostApp: frontmost,
     byteLength: shot.byteLength,
@@ -29,7 +71,7 @@ export async function captureObservation(opts: CaptureOpts & { includeUi?: boole
   let uiError: string | undefined;
   if (opts.includeUi) {
     try {
-      const dump = await axDump({ pid: frontmost.pid, maxNodes: 1500 });
+      const dump = await axDump({ pid: target.pid, maxNodes: 1500 });
       const b = shot.geometry.screenBoundsPoints;
       const visible = dump.elements.filter(e => e.frame.w > 0 && e.frame.h > 0 &&
         e.frame.x < b.x + b.width && e.frame.x + e.frame.w > b.x &&
@@ -58,12 +100,12 @@ export function observationResult(observation: Awaited<ReturnType<typeof capture
 export function registerPerceptionTools(server: McpServer) {
   server.registerTool("get_desktop_state", {
     title: "Observe desktop with screenshot geometry and UI state",
-    description: "Get a current main-display screenshot (or explicit region), exact image-pixel-to-screen-point mapping, frontmost app identity and compact visible Accessibility elements. Use before visual actions. Crop with region for small text; no need to mentally scale coordinates.",
-    inputSchema: { region: region.optional(), max_width: z.number().int().positive().max(8192).optional(),
+    description: "Get a screenshot of the frontmost window (or another app's window, the full display or an explicit region), exact image-pixel-to-screen-point mapping, frontmost app identity and compact visible Accessibility elements of the captured app. Use before visual actions. Crop with region for small text; no need to mentally scale coordinates.",
+    inputSchema: { region: region.optional(), ...captureTargetSchema, max_width: z.number().int().positive().max(8192).optional(),
       include_ui: z.boolean().optional(), max_elements: z.number().int().positive().max(250).optional() },
     annotations: { readOnlyHint: true, openWorldHint: false },
-  }, async ({ region, max_width, include_ui, max_elements }) => observationResult(await captureObservation({
-    region, maxWidth: max_width ?? 1400, includeUi: include_ui ?? true, maxElements: max_elements,
+  }, async ({ region, app, full_screen, max_width, include_ui, max_elements }) => observationResult(await captureObservation({
+    region, app, fullScreen: full_screen, maxWidth: max_width ?? 1400, includeUi: include_ui ?? true, maxElements: max_elements,
   })));
 
   server.registerTool("act_and_observe", {
@@ -84,12 +126,13 @@ export function registerPerceptionTools(server: McpServer) {
       expect: z.object({ target: matcher, present: z.boolean().optional(), exact_value: z.string().optional() }).optional()
         .describe("Checks the target app's Accessibility tree. present defaults true. exact_value uses equality, not substring. Already satisfied conditions skip input."),
       timeout_ms: z.number().int().nonnegative().max(15_000).optional().describe("Postcondition polling budget; default 5000. A single OS call may extend it."),
-      region: region.optional().describe("Region for the returned screenshot; global screen points."),
+      region: region.optional().describe("Region for the returned screenshot; global screen points. Default: the frontmost window."),
+      full_screen: captureTargetSchema.full_screen,
       max_width: z.number().int().positive().max(8192).optional(),
       include_ui: z.boolean().optional(),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
-  }, async ({ app, action, expect, timeout_ms, region, max_width, include_ui }) => {
+  }, async ({ app, action, expect, timeout_ms, region, full_screen, max_width, include_ui }) => {
     const target = await appIdentity(app);
     const checkFocus = async () => {
       if ((await appIdentity()).pid !== target.pid) throw new Error("Frontmost app differs from the requested app. Observe and focus it before acting.");
@@ -144,7 +187,7 @@ export function registerPerceptionTools(server: McpServer) {
           case "scroll": await scroll(action.direction, action.amount, undefined, { pixels: action.pixels }); break;
         }
       },
-      observe: () => captureObservation({ region, maxWidth: max_width ?? 1400, includeUi: include_ui ?? true }),
+      observe: () => captureObservation({ region, fullScreen: full_screen, maxWidth: max_width ?? 1400, includeUi: include_ui ?? true }),
     });
     const { observation, ...receipt } = result;
     const state = { ...receipt, action: { kind: action.kind, ...receipt.action },

@@ -200,6 +200,26 @@ function boundsFor(snapshot: DisplaySnapshot, opts: CaptureOpts): Region {
   return { ...targetDisplay(snapshot, opts).bounds };
 }
 
+/**
+ * Clip a rectangle (e.g. a window frame) to the active display it overlaps
+ * most, so it is capturable as a region. Undefined when it is off-screen.
+ */
+export async function clipToDisplay(rect: Region): Promise<Region | undefined> {
+  const snapshot = await readDisplaySnapshot();
+  let best: Region | undefined;
+  for (const d of snapshot.displays) {
+    const b = d.bounds;
+    const x = Math.max(Math.ceil(rect.x), b.x);
+    const y = Math.max(Math.ceil(rect.y), b.y);
+    const width = Math.min(Math.floor(rect.x + rect.width), b.x + b.width) - x;
+    const height = Math.min(Math.floor(rect.y + rect.height), b.y + b.height) - y;
+    if (width > 0 && height > 0 && (!best || width * height > best.width * best.height)) {
+      best = { x, y, width, height };
+    }
+  }
+  return best;
+}
+
 /** Resolve the exact screen-point rectangle that will be captured. */
 export async function resolveCaptureBounds(opts: CaptureOpts = {}): Promise<Region> {
   validateOpts(opts);

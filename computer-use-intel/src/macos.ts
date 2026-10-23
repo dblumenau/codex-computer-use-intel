@@ -384,11 +384,14 @@ export interface AxWindow {
   index: number;
   title: string;
   minimized: boolean;
+  /** Absent from helpers built before window focus reporting. */
+  focused?: boolean;
+  main?: boolean;
   frame: { x: number; y: number; w: number; h: number };
 }
 
-export async function axWindows(app?: string): Promise<AxWindow[]> {
-  const j = await runAx(["windows", ...appArgs({ app })]);
+export async function axWindows(app?: string, pid?: number): Promise<AxWindow[]> {
+  const j = await runAx(["windows", ...appArgs({ app, pid })]);
   return j.windows as AxWindow[];
 }
 

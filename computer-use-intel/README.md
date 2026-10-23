@@ -164,8 +164,18 @@ permission.
 
 ### Observe and verify (v1.3)
 
-`get_desktop_state` accepts `region?`, `max_width?` (default 1400),
-`include_ui?` (default true), and `max_elements?` (default 120, maximum 250).
+`get_desktop_state` accepts `region?`, `app?`, `full_screen?`, `max_width?`
+(default 1400), `include_ui?` (default true), and `max_elements?` (default
+120, maximum 250).
+
+`screenshot`, `get_desktop_state`, `act_and_observe` and `screenshot_annotated`
+capture the frontmost app's focused window by default, clipped to its display,
+and fall back to the whole display when that app has no visible window. `app`
+captures a named app's window without focusing it (its on-screen rectangle, so
+an overlapping window shows on top). `full_screen: true` or `display_index`
+captures a whole display; `region` captures a rectangle. The metadata's
+`captureScope` says which one was used. OCR search tools still read the whole
+display.
 The returned screenshot metadata provides a `screenshot_id`, exact conversion
 and foreground app. AX/OCR coordinates are already screen points.
 
